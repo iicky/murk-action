@@ -1,0 +1,102 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test-install:
+    name: Install (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run action (install only, vault will fail)
+        uses: ./
+        with:
+          murk-key: 'AGE-SECRET-KEY-1DUMMY'
+          vault: 'nonexistent.murk'
+        continue-on-error: true
+
+      - name: Verify murk is installed and on PATH
+        run: murk --version
+
+  test-export:
+    name: Export (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create test vault
+        run: |
+          # Install murk to create the test vault.
+          VERSION=$(gh release view --repo iicky/murk --json tagName --jq '.tagName')
+          VERSION="${VERSION#v}"
+
+          case "$RUNNER_OS" in
+            Linux)  TARGET="x86_64-unknown-linux-gnu" ;;
+            macOS)  TARGET="aarch64-apple-darwin" ;;
+          esac
+
+          ARCHIVE="murk-v${VERSION}-${TARGET}.tar.gz"
+          gh release download "v${VERSION}" \
+            --repo iicky/murk \
+            --pattern "$ARCHIVE" \
+            --dir /tmp
+
+          tar xzf "/tmp/${ARCHIVE}" -C /tmp
+
+          # Create vault and extract key.
+          echo "ci-test" | /tmp/murk init --vault test.murk
+          MURK_KEY=$(sed -n 's/^export MURK_KEY=//p' .env)
+
+          # Add test secrets.
+          echo "hello_world" | MURK_KEY="$MURK_KEY" /tmp/murk add GREETING --vault test.murk
+          printf "it's got quotes" | MURK_KEY="$MURK_KEY" /tmp/murk add QUOTED_VAL --vault test.murk
+          printf "line1\nline2" | MURK_KEY="$MURK_KEY" /tmp/murk add MULTILINE --vault test.murk
+
+          # Save key for next step.
+          echo "TEST_MURK_KEY=$MURK_KEY" >> "$GITHUB_ENV"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Run murk-action
+        uses: ./
+        with:
+          murk-key: ${{ env.TEST_MURK_KEY }}
+          vault: 'test.murk'
+
+      - name: Verify secrets are in environment
+        run: |
+          test "$GREETING" = "hello_world" || { echo "FAIL: GREETING='$GREETING'"; exit 1; }
+          test "$QUOTED_VAL" = "it's got quotes" || { echo "FAIL: QUOTED_VAL mismatch"; exit 1; }
+
+          EXPECTED=$(printf "line1\nline2")
+          test "$MULTILINE" = "$EXPECTED" || { echo "FAIL: MULTILINE mismatch"; exit 1; }
+
+          echo "All assertions passed"
+
+  test-version-pin:
+    name: Version pin
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run with pinned version
+        uses: ./
+        with:
+          murk-key: 'AGE-SECRET-KEY-1DUMMY'
+          version: '0.2.1'
+          vault: 'nonexistent.murk'
+        continue-on-error: true
+
+      - name: Verify pinned version
+        run: murk --version | grep -q "0.2.1"

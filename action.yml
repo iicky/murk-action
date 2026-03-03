@@ -1,0 +1,140 @@
+name: 'murk-action'
+description: 'Decrypt murk secrets and inject into CI environment'
+branding:
+  icon: 'lock'
+  color: 'gray-dark'
+
+inputs:
+  murk-key:
+    description: 'Age secret key (AGE-SECRET-KEY-1...)'
+    required: true
+  version:
+    description: 'murk version to install (e.g. "0.2.1" or "latest")'
+    required: false
+    default: 'latest'
+  vault:
+    description: 'Path to vault file'
+    required: false
+    default: '.murk'
+  tags:
+    description: 'Space-separated tags to filter exported secrets'
+    required: false
+    default: ''
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install murk
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        # Map runner platform to murk release target.
+        case "$RUNNER_OS" in
+          Linux)
+            case "$RUNNER_ARCH" in
+              X64)   TARGET="x86_64-unknown-linux-gnu" ;;
+              ARM64) TARGET="aarch64-unknown-linux-gnu" ;;
+              ARM)   TARGET="arm-unknown-linux-gnueabihf" ;;
+              *)     echo "::error::Unsupported architecture: $RUNNER_ARCH"; exit 1 ;;
+            esac
+            ;;
+          macOS)
+            case "$RUNNER_ARCH" in
+              X64)   TARGET="x86_64-apple-darwin" ;;
+              ARM64) TARGET="aarch64-apple-darwin" ;;
+              *)     echo "::error::Unsupported architecture: $RUNNER_ARCH"; exit 1 ;;
+            esac
+            ;;
+          *)
+            echo "::error::Unsupported OS: $RUNNER_OS"
+            exit 1
+            ;;
+        esac
+
+        # Resolve version.
+        VERSION="${{ inputs.version }}"
+        if [ "$VERSION" = "latest" ]; then
+          VERSION=$(gh release view --repo iicky/murk --json tagName --jq '.tagName')
+          VERSION="${VERSION#v}"
+        fi
+        VERSION="${VERSION#v}"
+
+        # Download and extract.
+        ARCHIVE="murk-v${VERSION}-${TARGET}.tar.gz"
+        INSTALL_DIR="${RUNNER_TEMP}/murk-bin"
+        mkdir -p "$INSTALL_DIR"
+
+        gh release download "v${VERSION}" \
+          --repo iicky/murk \
+          --pattern "$ARCHIVE" \
+          --dir "$RUNNER_TEMP"
+
+        tar xzf "${RUNNER_TEMP}/${ARCHIVE}" -C "$INSTALL_DIR"
+
+        # Add to PATH for subsequent steps.
+        echo "$INSTALL_DIR" >> "$GITHUB_PATH"
+
+        # Verify.
+        "${INSTALL_DIR}/murk" --version
+      env:
+        GH_TOKEN: ${{ github.token }}
+
+    - name: Export secrets
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        # Mask the key itself as defense-in-depth.
+        echo "::add-mask::${MURK_KEY}"
+
+        # Build --tag arguments.
+        TAG_ARGS=""
+        if [ -n "$INPUT_TAGS" ]; then
+          for tag in $INPUT_TAGS; do
+            TAG_ARGS="$TAG_ARGS --tag $tag"
+          done
+        fi
+
+        # Run murk export (word splitting on TAG_ARGS is intentional).
+        # shellcheck disable=SC2086
+        MURK_EXPORT=$(murk export --vault "$INPUT_VAULT" $TAG_ARGS)
+
+        if [ -z "$MURK_EXPORT" ]; then
+          echo "::notice::No secrets exported from vault"
+          exit 0
+        fi
+
+        # Extract key names from export lines: "export KEY='...'" → "KEY"
+        KEYS=$(echo "$MURK_EXPORT" | sed -n "s/^export \([A-Za-z_][A-Za-z_0-9]*\)=.*/\1/p")
+
+        # eval handles murk's single-quote escaping correctly.
+        eval "$MURK_EXPORT"
+
+        # Random delimiter prevents injection via crafted secret values.
+        DELIM="MURK_EOF_$(head -c 16 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 24)"
+
+        COUNT=0
+        for KEY in $KEYS; do
+          VALUE="${!KEY}"
+
+          # Mask non-empty values so they don't appear in logs.
+          if [ -n "$VALUE" ]; then
+            echo "::add-mask::${VALUE}"
+          fi
+
+          # Write to GITHUB_ENV using delimiter syntax (handles multiline, special chars).
+          {
+            echo "${KEY}<<${DELIM}"
+            echo "${VALUE}"
+            echo "${DELIM}"
+          } >> "$GITHUB_ENV"
+
+          COUNT=$((COUNT + 1))
+        done
+
+        echo "::notice::Exported ${COUNT} secret(s) from ${INPUT_VAULT}"
+      env:
+        MURK_KEY: ${{ inputs.murk-key }}
+        INPUT_VAULT: ${{ inputs.vault }}
+        INPUT_TAGS: ${{ inputs.tags }}
