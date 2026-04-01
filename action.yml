@@ -57,6 +57,7 @@ runs:
         if [ "$VERSION" = "latest" ]; then
           VERSION=$(gh release view --repo iicky/murk --json tagName --jq '.tagName')
           VERSION="${VERSION#v}"
+          echo "::warning::murk-action resolved to v${VERSION} — pin 'version: ${VERSION}' for reproducible builds"
         fi
         VERSION="${VERSION#v}"
 
@@ -68,7 +69,19 @@ runs:
         gh release download "v${VERSION}" \
           --repo iicky/murk \
           --pattern "$ARCHIVE" \
+          --pattern "SHA256SUMS" \
           --dir "$RUNNER_TEMP"
+
+        # Verify checksum.
+        EXPECTED=$(grep "$ARCHIVE" "${RUNNER_TEMP}/SHA256SUMS" | cut -d' ' -f1)
+        ACTUAL=$(sha256sum "${RUNNER_TEMP}/${ARCHIVE}" | cut -d' ' -f1)
+        if [ "$ACTUAL" != "$EXPECTED" ]; then
+          echo "::error::Checksum mismatch for $ARCHIVE — expected $EXPECTED, got $ACTUAL"
+          exit 1
+        fi
+
+        # Verify build provenance attestation.
+        gh attestation verify "${RUNNER_TEMP}/${ARCHIVE}" --repo iicky/murk
 
         tar xzf "${RUNNER_TEMP}/${ARCHIVE}" -C "$INSTALL_DIR"
 
