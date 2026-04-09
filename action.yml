@@ -21,10 +21,19 @@ inputs:
     required: false
     default: ''
 
+outputs:
+  version:
+    description: 'Installed murk version'
+    value: ${{ steps.install.outputs.version }}
+  keys:
+    description: 'Space-separated list of exported key names'
+    value: ${{ steps.export.outputs.keys }}
+
 runs:
   using: 'composite'
   steps:
     - name: Install murk
+      id: install
       shell: bash
       run: |
         set -euo pipefail
@@ -72,9 +81,13 @@ runs:
           --pattern "SHA256SUMS" \
           --dir "$RUNNER_TEMP"
 
-        # Verify checksum.
-        EXPECTED=$(grep "$ARCHIVE" "${RUNNER_TEMP}/SHA256SUMS" | cut -d' ' -f1)
-        ACTUAL=$(sha256sum "${RUNNER_TEMP}/${ARCHIVE}" | cut -d' ' -f1)
+        # Verify checksum (shasum for macOS portability).
+        EXPECTED=$(grep -F "$ARCHIVE" "${RUNNER_TEMP}/SHA256SUMS" | cut -d' ' -f1)
+        if command -v sha256sum >/dev/null 2>&1; then
+          ACTUAL=$(sha256sum "${RUNNER_TEMP}/${ARCHIVE}" | cut -d' ' -f1)
+        else
+          ACTUAL=$(shasum -a 256 "${RUNNER_TEMP}/${ARCHIVE}" | cut -d' ' -f1)
+        fi
         if [ "$ACTUAL" != "$EXPECTED" ]; then
           echo "::error::Checksum mismatch for $ARCHIVE — expected $EXPECTED, got $ACTUAL"
           exit 1
@@ -90,15 +103,23 @@ runs:
         # Add to PATH for subsequent steps.
         echo "$INSTALL_DIR" >> "$GITHUB_PATH"
 
-        # Verify.
+        # Verify and expose version.
         "${INSTALL_DIR}/murk" --version
+        echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
       env:
         GH_TOKEN: ${{ github.token }}
 
     - name: Export secrets
+      id: export
       shell: bash
       run: |
         set -euo pipefail
+
+        # Validate key format.
+        if [[ ! "$MURK_KEY" =~ ^AGE-SECRET-KEY-1 ]]; then
+          echo "::error::murk-key does not look like an age secret key (expected AGE-SECRET-KEY-1...)"
+          exit 1
+        fi
 
         # Mask the key itself as defense-in-depth.
         echo "::add-mask::${MURK_KEY}"
@@ -134,8 +155,15 @@ runs:
           VALUE="${!KEY}"
 
           # Mask non-empty values so they don't appear in logs.
+          # Mask the full value and each individual line (multiline values
+          # would otherwise leak per-line content in log output).
           if [ -n "$VALUE" ]; then
             echo "::add-mask::${VALUE}"
+            while IFS= read -r line; do
+              if [ -n "$line" ]; then
+                echo "::add-mask::${line}"
+              fi
+            done <<< "$VALUE"
           fi
 
           # Write to GITHUB_ENV using delimiter syntax (handles multiline, special chars).
@@ -150,6 +178,7 @@ runs:
         done
 
         echo "::notice::Exported ${COUNT} secret(s) from ${INPUT_VAULT}"
+        echo "keys=${KEYS}" >> "$GITHUB_OUTPUT"
       env:
         MURK_KEY: ${{ inputs.murk-key }}
         INPUT_VAULT: ${{ inputs.vault }}
