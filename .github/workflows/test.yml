@@ -56,7 +56,14 @@ jobs:
 
           # Create vault and extract key.
           echo "ci-test" | /tmp/murk init --vault test.murk
-          MURK_KEY=$(sed -n 's/^export MURK_KEY=//p' .env)
+
+          # init writes MURK_KEY_FILE reference; read the actual key from the file.
+          KEY_FILE=$(sed -n "s/^export MURK_KEY_FILE='\\(.*\\)'/\\1/p" .env)
+          if [ -n "$KEY_FILE" ]; then
+            MURK_KEY=$(cat "$KEY_FILE")
+          else
+            MURK_KEY=$(sed -n 's/^export MURK_KEY=//p' .env)
+          fi
 
           # Add test secrets.
           echo "hello_world" | MURK_KEY="$MURK_KEY" /tmp/murk add GREETING --vault test.murk
