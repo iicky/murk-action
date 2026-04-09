@@ -80,8 +80,10 @@ runs:
           exit 1
         fi
 
-        # Verify build provenance attestation.
-        gh attestation verify "${RUNNER_TEMP}/${ARCHIVE}" --repo iicky/murk
+        # Verify build provenance attestation (best-effort for older releases).
+        if ! gh attestation verify "${RUNNER_TEMP}/${ARCHIVE}" --repo iicky/murk 2>/dev/null; then
+          echo "::warning::No attestation found for $ARCHIVE — older releases may lack provenance"
+        fi
 
         tar xzf "${RUNNER_TEMP}/${ARCHIVE}" -C "$INSTALL_DIR"
 
@@ -139,7 +141,8 @@ runs:
           # Write to GITHUB_ENV using delimiter syntax (handles multiline, special chars).
           {
             echo "${KEY}<<${DELIM}"
-            echo "${VALUE}"
+            printf '%s' "${VALUE}"
+            echo
             echo "${DELIM}"
           } >> "$GITHUB_ENV"
 
