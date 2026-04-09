@@ -178,7 +178,7 @@ runs:
         done
 
         echo "::notice::Exported ${COUNT} secret(s) from ${INPUT_VAULT}"
-        echo "keys=${KEYS}" >> "$GITHUB_OUTPUT"
+        echo "keys=$(echo $KEYS)" >> "$GITHUB_OUTPUT"
       env:
         MURK_KEY: ${{ inputs.murk-key }}
         INPUT_VAULT: ${{ inputs.vault }}
