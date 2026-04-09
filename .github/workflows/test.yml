@@ -61,7 +61,7 @@ jobs:
           # Add test secrets.
           echo "hello_world" | MURK_KEY="$MURK_KEY" /tmp/murk add GREETING --vault test.murk
           printf "it's got quotes" | MURK_KEY="$MURK_KEY" /tmp/murk add QUOTED_VAL --vault test.murk
-          printf "line1\nline2" | MURK_KEY="$MURK_KEY" /tmp/murk add MULTILINE --vault test.murk
+          echo 'val with $pecial chars & stuff' | MURK_KEY="$MURK_KEY" /tmp/murk add SPECIAL --vault test.murk
 
           # Save key for next step.
           echo "TEST_MURK_KEY=$MURK_KEY" >> "$GITHUB_ENV"
@@ -79,8 +79,7 @@ jobs:
           test "$GREETING" = "hello_world" || { echo "FAIL: GREETING='$GREETING'"; exit 1; }
           test "$QUOTED_VAL" = "it's got quotes" || { echo "FAIL: QUOTED_VAL mismatch"; exit 1; }
 
-          EXPECTED=$(printf "line1\nline2")
-          test "$MULTILINE" = "$EXPECTED" || { echo "FAIL: MULTILINE mismatch"; exit 1; }
+          test "$SPECIAL" = 'val with $pecial chars & stuff' || { echo "FAIL: SPECIAL mismatch"; exit 1; }
 
           echo "All assertions passed"
 
