@@ -64,7 +64,7 @@ runs:
         # Resolve version.
         VERSION="${{ inputs.version }}"
         if [ "$VERSION" = "latest" ]; then
-          VERSION=$(gh release view --repo iicky/murk --json tagName --jq '.tagName')
+          VERSION=$(gh release view --repo interrupted-inc/murk --json tagName --jq '.tagName')
           VERSION="${VERSION#v}"
           echo "::warning::murk-action resolved to v${VERSION} — pin 'version: ${VERSION}' for reproducible builds"
         fi
@@ -76,7 +76,7 @@ runs:
         mkdir -p "$INSTALL_DIR"
 
         gh release download "v${VERSION}" \
-          --repo iicky/murk \
+          --repo interrupted-inc/murk \
           --pattern "$ARCHIVE" \
           --pattern "SHA256SUMS" \
           --dir "$RUNNER_TEMP"
@@ -94,7 +94,7 @@ runs:
         fi
 
         # Verify build provenance attestation (best-effort for older releases).
-        if ! gh attestation verify "${RUNNER_TEMP}/${ARCHIVE}" --repo iicky/murk 2>/dev/null; then
+        if ! gh attestation verify "${RUNNER_TEMP}/${ARCHIVE}" --repo interrupted-inc/murk 2>/dev/null; then
           echo "::warning::No attestation found for $ARCHIVE — older releases may lack provenance"
         fi
 

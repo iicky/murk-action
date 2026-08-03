@@ -1,12 +1,12 @@
 # murk-action
 
-Decrypt [murk](https://github.com/iicky/murk) secrets and inject them
+Decrypt [murk](https://github.com/interrupted-inc/murk) secrets and inject them
 into your GitHub Actions workflow.
 
 ## Usage
 
 ```yaml
-- uses: iicky/murk-action@v1
+- uses: interrupted-inc/murk-action@v1
   with:
     murk-key: ${{ secrets.MURK_KEY }}
 ```
@@ -18,7 +18,7 @@ Subsequent steps can use them as regular environment variables.
 steps:
   - uses: actions/checkout@v4
 
-  - uses: iicky/murk-action@v1
+  - uses: interrupted-inc/murk-action@v1
     with:
       murk-key: ${{ secrets.MURK_KEY }}
 
@@ -40,7 +40,7 @@ steps:
 ### Pin a version
 
 ```yaml
-- uses: iicky/murk-action@v1
+- uses: interrupted-inc/murk-action@v1
   with:
     murk-key: ${{ secrets.MURK_KEY }}
     version: '0.2.1'
@@ -49,7 +49,7 @@ steps:
 ### Custom vault path
 
 ```yaml
-- uses: iicky/murk-action@v1
+- uses: interrupted-inc/murk-action@v1
   with:
     murk-key: ${{ secrets.MURK_KEY }}
     vault: 'prod.murk'
@@ -58,7 +58,7 @@ steps:
 ### Filter by tags
 
 ```yaml
-- uses: iicky/murk-action@v1
+- uses: interrupted-inc/murk-action@v1
   with:
     murk-key: ${{ secrets.MURK_KEY }}
     tags: 'deploy aws'
@@ -69,7 +69,7 @@ steps:
 If you prefer subprocess injection over `$GITHUB_ENV`:
 
 ```yaml
-- uses: iicky/murk-action@v1
+- uses: interrupted-inc/murk-action@v1
   with:
     murk-key: ${{ secrets.MURK_KEY }}
 
