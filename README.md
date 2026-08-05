@@ -1,5 +1,7 @@
 # murk-action
 
+[![GitHub Marketplace](https://img.shields.io/badge/GitHub%20Marketplace-murk--action-2ea44f?logo=github&logoColor=white)](https://github.com/marketplace/actions/murk-action)
+
 Decrypt [murk](https://github.com/interrupted-inc/murk) secrets and inject them
 into your GitHub Actions workflow.
 
